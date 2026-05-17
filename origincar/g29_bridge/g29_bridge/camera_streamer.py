@@ -3,13 +3,10 @@
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-import cv2
-import numpy as np
-
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage
 
 
 class MJPEGHandler(BaseHTTPRequestHandler):
@@ -57,53 +54,24 @@ class CameraStreamerNode(Node):
         self.running = True
 
         qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
-            depth=1
+            depth=1,
         )
         self.subscription = self.create_subscription(
-            Image, image_topic, self._image_callback, qos)
+            CompressedImage, image_topic, self._image_callback, qos)
 
         self.http_thread = threading.Thread(target=self._run_http_server, daemon=True)
         self.http_thread.start()
 
         self.get_logger().info(
             f'Camera streamer started. '
-            f'Subscribing to [{image_topic}], HTTP port={self.http_port}')
+            f'Subscribing to [{image_topic}] (CompressedImage), HTTP port={self.http_port}')
 
     def _image_callback(self, msg):
-        try:
-            if msg.encoding == 'jpeg':
-                with self._lock:
-                    self._jpeg_bytes = bytes(msg.data)
-                self.event.set()
-                return
-
-            if msg.encoding == 'rgb8':
-                frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
-                    msg.height, msg.width, 3)
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            elif msg.encoding == 'bgr8':
-                frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
-                    msg.height, msg.width, 3)
-            elif msg.encoding == 'mono8':
-                frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
-                    msg.height, msg.width)
-                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-            elif msg.encoding in ('yuv422', 'yuv422_yuy2'):
-                frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
-                    msg.height, msg.width, 2)
-                frame = cv2.cvtColor(frame, cv2.COLOR_YUV2BGR_YUYV)
-            else:
-                frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
-                    msg.height, msg.width, -1)
-
-            _, jpeg_data = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            with self._lock:
-                self._jpeg_bytes = jpeg_data.tobytes()
-            self.event.set()
-        except Exception as e:
-            self.get_logger().warn(f'Image decode error: {e}')
+        with self._lock:
+            self._jpeg_bytes = bytes(msg.data)
+        self.event.set()
 
     def get_jpeg_bytes(self):
         with self._lock:
