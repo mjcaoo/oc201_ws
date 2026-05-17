@@ -4,7 +4,7 @@ g29_bridge_node:
   ros__parameters:
     udp_port: 9999
     max_speed: 1.0
-    max_steering_angle: 45.0
+    max_steering_angle: 32.0    # 协议限制 short 最大 ±32.767°
     ackermann_topic: "ackermann_cmd"
     timeout_sec: 0.5
 

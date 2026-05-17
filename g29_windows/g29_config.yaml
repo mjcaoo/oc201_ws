@@ -13,8 +13,8 @@ camera_url: "http://192.168.31.60:8080"
 # 最大前进速度 (m/s)
 max_speed: 1.0
 
-# 最大转向角度 (度)
-max_steering_angle: 45
+# 最大转向角度 (度, 协议限制不超过 32)
+max_steering_angle: 32
 
 # 方向盘零点偏移校准 (-1.0 ~ +1.0)
 steering_offset: 0.0

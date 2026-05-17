@@ -58,8 +58,11 @@ void origincar_base::Akm_Cmd_Vel_Callback(const ackermann_msgs::msg::AckermannDr
         // 直接角度模式：Vy_raw = 1，通知固件使用角度模式
         Send_Data.tx[5] = 0;
         Send_Data.tx[6] = 1;
-        // steering_angle (rad) 转为角度 (°)，直接发送
+        // steering_angle (rad) 转为角度 (°)
+        // 协议限制: short 16位有符号, 传输值 = 角度*1000, 最大 ±32.767°
         float angle_deg = akm_ctl->drive.steering_angle * 180.0f / PI;
+        if (angle_deg > 32.7f) angle_deg = 32.7f;
+        if (angle_deg < -32.7f) angle_deg = -32.7f;
         transition = (short)(angle_deg * 1000);
         Send_Data.tx[8] = transition;
         Send_Data.tx[7] = transition>>8;
