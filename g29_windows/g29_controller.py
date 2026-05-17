@@ -21,6 +21,11 @@ FRAME_HEADER = 0x7B
 FRAME_TAIL = 0x7D
 PACKET_SIZE = 12
 
+# 按钮索引约定 (G29 G Hub 模式)
+BTN_TRIANGLE = 3  # 紧急停止
+BTN_CIRCLE = 2    # 零点校准
+BTN_L3 = 10       # 前进/倒退切换
+
 
 class G29Input:
     """读取 Logitech G29 方向盘输入"""
@@ -34,7 +39,6 @@ class G29Input:
         self.joy = None
         self.steering = 0.0
         self.throttle = 0.0
-        self.brake = 0.0
         self.buttons = {}
 
         self._init_joystick()
@@ -51,22 +55,21 @@ class G29Input:
         print(f"[G29] 轴数量: {self.joy.get_numaxes()}, 按钮数量: {self.joy.get_numbuttons()}")
 
     def read(self):
-        """读取当前状态，返回 (steering, throttle, brake, buttons_dict)"""
+        """读取当前状态，返回 (steering, throttle, buttons_dict)"""
         pygame.event.pump()
 
         if self.joy is None:
             count = pygame.joystick.get_count()
             if count > 0:
                 self._init_joystick()
-            return 0.0, 0.0, 0.0, {}
+            return 0.0, 0.0, {}
 
         try:
             raw_steering = self.joy.get_axis(0)
-            raw_throttle = self.joy.get_axis(2)
-            raw_brake = self.joy.get_axis(3)
+            raw_throttle = self.joy.get_axis(3)
         except pygame.error:
             self.joy = None
-            return 0.0, 0.0, 0.0, {}
+            return 0.0, 0.0, {}
 
         steering = raw_steering + self.steering_offset
         if abs(steering) < self.steering_deadzone:
@@ -74,7 +77,6 @@ class G29Input:
         steering = max(-1.0, min(1.0, steering))
 
         throttle = (1.0 - raw_throttle) / 2.0
-        brake = (1.0 - raw_brake) / 2.0
 
         buttons = {}
         try:
@@ -85,10 +87,9 @@ class G29Input:
 
         self.steering = steering
         self.throttle = throttle
-        self.brake = brake
         self.buttons = buttons
 
-        return steering, throttle, brake, buttons
+        return steering, throttle, buttons
 
     def quit(self):
         pygame.quit()
@@ -108,6 +109,8 @@ class UDPClient:
             buttons_byte |= 0x01
         if button_flags.get('recalibrate', False):
             buttons_byte |= 0x02
+        if button_flags.get('reverse', False):
+            buttons_byte |= 0x04
 
         payload = struct.pack('<BffB', FRAME_HEADER, steering, throttle, buttons_byte)
         checksum = 0
@@ -175,25 +178,26 @@ class HUD:
     """在画面上叠加控制信息"""
 
     @staticmethod
-    def draw(frame, steering, throttle, brake, speed, angle_deg, connected, buttons):
+    def draw(frame, steering, throttle, reverse, speed, angle_deg, connected, button_flags):
         if frame is None:
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
         h, w = frame.shape[:2]
 
-        # 状态指示
         status_color = (0, 255, 0) if connected else (0, 0, 255)
         status_text = "CONNECTED" if connected else "NO SIGNAL"
         cv2.putText(frame, status_text, (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
 
-        # 速度和转向角
-        cv2.putText(frame, f"Speed: {speed:.2f} m/s", (10, 65),
+        gear_text = "R" if reverse else "D"
+        gear_color = (0, 128, 255) if reverse else (0, 255, 0)
+        cv2.putText(frame, f"Gear: {gear_text}", (10, 65),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, gear_color, 2)
+        cv2.putText(frame, f"Speed: {speed:.2f} m/s", (10, 95),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        cv2.putText(frame, f"Angle: {angle_deg:+.1f} deg", (10, 95),
+        cv2.putText(frame, f"Angle: {angle_deg:+.1f} deg", (10, 125),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
-        # 转向条
         bar_y = h - 60
         bar_cx = w // 2
         bar_w = 200
@@ -204,19 +208,13 @@ class HUD:
                       (steer_x + 8, bar_y + 25), (0, 200, 255), -1)
         cv2.line(frame, (bar_cx, bar_y - 10), (bar_cx, bar_y + 30), (200, 200, 200), 1)
 
-        # 油门/刹车条
         cv2.putText(frame, "THR", (10, h - 95), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 200, 0), 1)
         cv2.rectangle(frame, (10, h - 90), (30, h - 20), (50, 50, 50), -1)
         thr_h = int(throttle * 70)
-        cv2.rectangle(frame, (10, h - 20 - thr_h), (30, h - 20), (0, 200, 0), -1)
+        thr_color = (0, 128, 255) if reverse else (0, 200, 0)
+        cv2.rectangle(frame, (10, h - 20 - thr_h), (30, h - 20), thr_color, -1)
 
-        cv2.putText(frame, "BRK", (45, h - 95), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 200), 1)
-        cv2.rectangle(frame, (45, h - 90), (65, h - 20), (50, 50, 50), -1)
-        brk_h = int(brake * 70)
-        cv2.rectangle(frame, (45, h - 20 - brk_h), (65, h - 20), (0, 0, 200), -1)
-
-        # 急停状态
-        if buttons.get('emergency_stop', False):
+        if button_flags.get('emergency_stop', False):
             cv2.putText(frame, "EMERGENCY STOP", (w // 2 - 120, h // 2),
                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
 
@@ -229,7 +227,7 @@ def load_config(config_path):
         'udp_port': 9999,
         'camera_url': 'http://192.168.1.100:8080',
         'max_speed': 1.0,
-        'max_steering_angle': 45,
+        'max_steering_angle': 32,
         'steering_offset': 0.0,
         'steering_deadzone': 0.03,
         'display_width': 640,
@@ -272,12 +270,12 @@ def main():
     print(f"  最大转角: {cfg['max_steering_angle']} deg")
     print("=" * 50)
     print("控制说明:")
-    print("  方向盘  - 转向")
-    print("  油门    - 前进")
-    print("  刹车    - 减速/停车")
-    print("  按钮 X  - 紧急停止")
-    print("  按钮 O  - 零点校准")
-    print("  ESC/Q   - 退出")
+    print("  方向盘      - 转向")
+    print("  右边踏板    - 油门")
+    print("  L3 按钮     - 前进/倒退切换")
+    print("  三角按钮    - 紧急停止")
+    print("  圆圈按钮    - 零点校准")
+    print("  ESC/Q       - 退出")
     print("=" * 50)
 
     g29 = G29Input(
@@ -290,46 +288,50 @@ def main():
     max_speed = cfg['max_speed']
     max_angle = cfg['max_steering_angle']
     emg_stop = False
-    calibration_mode = False
-    calibration_offset = 0.0
-    prev_btn_x = False
-    prev_btn_o = False
+    reverse = False
+    prev_btn_triangle = False
+    prev_btn_circle = False
+    prev_btn_l3 = False
 
     clock = pygame.time.Clock()
     target_fps = 30
 
     try:
         while True:
-            steering, throttle, brake, buttons = g29.read()
+            steering, throttle, buttons = g29.read()
 
-            btn_x = buttons.get(2, False)
-            btn_o = buttons.get(1, False)
+            btn_triangle = buttons.get(BTN_TRIANGLE, False)
+            btn_circle = buttons.get(BTN_CIRCLE, False)
+            btn_l3 = buttons.get(BTN_L3, False)
 
-            if btn_x and not prev_btn_x:
+            if btn_triangle and not prev_btn_triangle:
                 emg_stop = not emg_stop
                 print(f"[CTRL] 紧急停止: {'ON' if emg_stop else 'OFF'}")
 
-            if btn_o and not prev_btn_o:
-                calibration_offset = -steering
-                g29.steering_offset = calibration_offset
-                print(f"[CTRL] 零点校准: offset={calibration_offset:.3f}")
+            if btn_circle and not prev_btn_circle:
+                g29.steering_offset = -steering
+                print(f"[CTRL] 零点校准: offset={g29.steering_offset:.3f}")
 
-            prev_btn_x = btn_x
-            prev_btn_o = btn_o
+            if btn_l3 and not prev_btn_l3:
+                reverse = not reverse
+                print(f"[CTRL] 档位: {'R 倒车' if reverse else 'D 前进'}")
 
-            effective_throttle = max(0.0, throttle - brake)
-            speed = effective_throttle * max_speed
+            prev_btn_triangle = btn_triangle
+            prev_btn_circle = btn_circle
+            prev_btn_l3 = btn_l3
+
+            speed = throttle * max_speed
             angle_deg = steering * max_angle
 
             button_flags = {
                 'emergency_stop': emg_stop,
-                'recalibrate': False,
+                'reverse': reverse,
             }
-            udp.send(steering, effective_throttle, button_flags)
+            udp.send(steering, throttle, button_flags)
 
             frame = cam.get_frame()
             display = HUD.draw(
-                frame, steering, throttle, brake,
+                frame, steering, throttle, reverse,
                 speed, angle_deg, cam.connected, button_flags
             )
 
@@ -349,7 +351,7 @@ def main():
         pass
     finally:
         print("\n[CTRL] 正在停止...")
-        udp.send(0.0, 0.0, {'emergency_stop': True})
+        udp.send(0.0, 0.0, {'emergency_stop': True, 'reverse': False})
         time.sleep(0.1)
         udp.close()
         cam.stop()

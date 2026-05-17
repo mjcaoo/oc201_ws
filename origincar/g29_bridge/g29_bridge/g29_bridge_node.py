@@ -98,12 +98,15 @@ class G29BridgeNode(Node):
             return
 
         emergency_stop = bool(self.buttons & 0x01)
+        reverse = bool(self.buttons & 0x04)
 
         if emergency_stop:
             speed = 0.0
             angle = 0.0
         else:
             speed = self.throttle * self.max_speed
+            if reverse:
+                speed = -speed
             angle = self.steering * math.radians(self.max_steering_angle)
 
         msg = AckermannDriveStamped()
