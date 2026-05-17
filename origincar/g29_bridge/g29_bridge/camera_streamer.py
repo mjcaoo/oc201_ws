@@ -21,20 +21,17 @@ class MJPEGHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
         while self.server.streamer.running:
-            frame = self.server.streamer.get_frame()
-            if frame is None:
+            jpeg_bytes = self.server.streamer.get_jpeg_bytes()
+            if jpeg_bytes is None:
                 self.server.streamer.event.wait(timeout=0.1)
                 continue
-
-            _, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            jpg_bytes = jpeg.tobytes()
 
             try:
                 self.wfile.write(b'--frame\r\n')
                 self.wfile.write(b'Content-Type: image/jpeg\r\n')
-                self.wfile.write(f'Content-Length: {len(jpg_bytes)}\r\n'.encode())
+                self.wfile.write(f'Content-Length: {len(jpeg_bytes)}\r\n'.encode())
                 self.wfile.write(b'\r\n')
-                self.wfile.write(jpg_bytes)
+                self.wfile.write(jpeg_bytes)
                 self.wfile.write(b'\r\n')
                 self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
@@ -48,13 +45,13 @@ class CameraStreamerNode(Node):
     def __init__(self):
         super().__init__('camera_streamer')
 
-        self.declare_parameter('image_topic', '/image_raw')
+        self.declare_parameter('image_topic', '/image')
         self.declare_parameter('http_port', 8080)
 
         image_topic = self.get_parameter('image_topic').value
         self.http_port = self.get_parameter('http_port').value
 
-        self._frame = None
+        self._jpeg_bytes = None
         self._lock = threading.Lock()
         self.event = threading.Event()
         self.running = True
@@ -76,6 +73,12 @@ class CameraStreamerNode(Node):
 
     def _image_callback(self, msg):
         try:
+            if msg.encoding == 'jpeg':
+                with self._lock:
+                    self._jpeg_bytes = bytes(msg.data)
+                self.event.set()
+                return
+
             if msg.encoding == 'rgb8':
                 frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
                     msg.height, msg.width, 3)
@@ -95,15 +98,16 @@ class CameraStreamerNode(Node):
                 frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
                     msg.height, msg.width, -1)
 
+            _, jpeg_data = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
             with self._lock:
-                self._frame = frame
+                self._jpeg_bytes = jpeg_data.tobytes()
             self.event.set()
         except Exception as e:
             self.get_logger().warn(f'Image decode error: {e}')
 
-    def get_frame(self):
+    def get_jpeg_bytes(self):
         with self._lock:
-            return self._frame.copy() if self._frame is not None else None
+            return self._jpeg_bytes
 
     def _run_http_server(self):
         server = HTTPServer(('0.0.0.0', self.http_port), MJPEGHandler)

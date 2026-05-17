@@ -1,25 +1,24 @@
 # G29 Bridge 配置参数
-# 运行时可修改，launch 文件中会读取
 
 g29_bridge_node:
   ros__parameters:
     udp_port: 9999
-    max_speed: 1.0              # m/s, 最大前进速度
-    max_steering_angle: 45.0    # 度, 最大转向角度
+    max_speed: 1.0
+    max_steering_angle: 45.0
     ackermann_topic: "ackermann_cmd"
-    timeout_sec: 0.5            # 秒, 信号丢失超时
+    timeout_sec: 0.5
 
 camera_streamer:
   ros__parameters:
-    image_topic: "/image_raw"
+    image_topic: "/image"
     http_port: 8080
 
-usb_cam:
+origincar_base:
   ros__parameters:
-    video_device: "/dev/video0"
-    image_width: 640
-    image_height: 480
-    pixel_format: "yuyv"
-    io_method: "mmap"
-    framerate: 30.0
-    camera_frame_id: "camera_link"
+    usart_port_name: "/dev/ttyACM0"
+    serial_baud_rate: 115200
+    robot_frame_id: "base_footprint"
+    odom_frame_id: "odom_combined"
+    cmd_vel: "cmd_vel"
+    akm_cmd_vel: "ackermann_cmd"
+    use_direct_angle: true
