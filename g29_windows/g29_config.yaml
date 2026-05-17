@@ -1,0 +1,27 @@
+# G29 方向盘遥控器配置
+# 修改此文件后重新运行即可生效
+
+# RDK X3 IP 地址（运行时修改）
+rdk_x3_ip: "192.168.1.100"
+
+# UDP 端口
+udp_port: 9999
+
+# 摄像头 HTTP 流地址
+camera_url: "http://192.168.1.100:8080"
+
+# 最大前进速度 (m/s)
+max_speed: 1.0
+
+# 最大转向角度 (度)
+max_steering_angle: 45
+
+# 方向盘零点偏移校准 (-1.0 ~ +1.0)
+steering_offset: 0.0
+
+# 方向盘死区 (避免微小抖动)
+steering_deadzone: 0.03
+
+# 画面显示分辨率
+display_width: 640
+display_height: 480

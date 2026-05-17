@@ -187,6 +187,7 @@ private:
 	string usart_port_name, robot_frame_id, gyro_frame_id, odom_frame_id, akm_cmd_vel, test;
 	std::string cmd_vel;
 	int serial_baud_rate;
+	bool use_direct_angle;
 	RECEIVE_DATA Receive_Data;
 	SEND_DATA Send_Data;
 

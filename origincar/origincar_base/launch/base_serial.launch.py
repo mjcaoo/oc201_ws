@@ -6,6 +6,7 @@ import launch_ros.actions
 
 def generate_launch_description():
     akmcar = LaunchConfiguration('akmcar', default='false')
+    use_direct_angle = LaunchConfiguration('use_direct_angle', default='false')
 
     robot_parameters = [
         {'usart_port_name': '/dev/ttyACM0',
@@ -20,14 +21,22 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'akmcar',
             default_value='false',
-            description='Use simulation (Gazebo) clock if true'
+            description='Use Ackermann car mode if true'
+        ),
+        DeclareLaunchArgument(
+            'use_direct_angle',
+            default_value='false',
+            description='Use direct steering angle mode for Akm car (Vy_raw=1)'
         ),
 
         launch_ros.actions.Node(
             condition=IfCondition(akmcar),
             package='origincar_base',
             executable='origincar_base_node',
-            parameters=robot_parameters + [{'akm_cmd_vel': 'ackermann_cmd'}],
+            parameters=robot_parameters + [
+                {'akm_cmd_vel': 'ackermann_cmd'},
+                {'use_direct_angle': use_direct_angle}
+            ],
             remappings=[('/cmd_vel', 'cmd_vel')],
         ),
 

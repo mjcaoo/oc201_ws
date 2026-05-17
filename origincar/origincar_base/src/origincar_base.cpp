@@ -54,10 +54,22 @@ void origincar_base::Akm_Cmd_Vel_Callback(const ackermann_msgs::msg::AckermannDr
     Send_Data.tx[4] = transition;
     Send_Data.tx[3] = transition>>8;
 
-    transition=0;
-    transition = akm_ctl->drive.steering_angle*1000/2;
-    Send_Data.tx[8] = transition;
-    Send_Data.tx[7] = transition>>8;
+    if (use_direct_angle) {
+        // 直接角度模式：Vy_raw = 1，通知固件使用角度模式
+        Send_Data.tx[5] = 0;
+        Send_Data.tx[6] = 1;
+        // steering_angle (rad) 转为角度 (°)，直接发送
+        float angle_deg = akm_ctl->drive.steering_angle * 180.0f / PI;
+        transition = (short)(angle_deg * 1000);
+        Send_Data.tx[8] = transition;
+        Send_Data.tx[7] = transition>>8;
+    } else {
+        // 角速度模式：Vy_raw = 0 (默认)
+        transition=0;
+        transition = akm_ctl->drive.steering_angle*1000/2;
+        Send_Data.tx[8] = transition;
+        Send_Data.tx[7] = transition>>8;
+    }
 
     Send_Data.tx[9]=Check_Sum(9,SEND_DATA_CHECK); 
     Send_Data.tx[10]=FRAME_TAIL;
@@ -315,6 +327,7 @@ origincar_base::origincar_base()
   this->declare_parameter<std::string>("odom_frame_id", "odom");
   this->declare_parameter<std::string>("robot_frame_id", "base_link");
   this->declare_parameter<std::string>("gyro_frame_id", "gyro_link");
+  this->declare_parameter<bool>("use_direct_angle", false);
 
   this->get_parameter("serial_baud_rate", serial_baud_rate);
   this->get_parameter("usart_port_name", usart_port_name);
@@ -323,6 +336,7 @@ origincar_base::origincar_base()
   this->get_parameter("odom_frame_id", odom_frame_id);
   this->get_parameter("robot_frame_id", robot_frame_id);
   this->get_parameter("gyro_frame_id", gyro_frame_id);
+  this->get_parameter("use_direct_angle", use_direct_angle);
 
   odom_publisher = create_publisher<nav_msgs::msg::Odometry>("odom", 10);
 
