@@ -24,7 +24,8 @@ PACKET_SIZE = 12
 # 按钮索引约定 (G29 G Hub 模式)
 BTN_TRIANGLE = 3  # 紧急停止
 BTN_CIRCLE = 2    # 零点校准
-BTN_L3 = 10       # 前进/倒退切换
+BTN_L_PADDLE = 4  # 左拨片 → 倒车
+BTN_R_PADDLE = 5  # 右拨片 → 前进
 
 
 class G29Input:
@@ -66,7 +67,7 @@ class G29Input:
 
         try:
             raw_steering = self.joy.get_axis(0)
-            raw_throttle = self.joy.get_axis(3)
+            raw_throttle = self.joy.get_axis(1)
         except pygame.error:
             self.joy = None
             return 0.0, 0.0, {}
@@ -271,8 +272,9 @@ def main():
     print("=" * 50)
     print("控制说明:")
     print("  方向盘      - 转向")
-    print("  右边踏板    - 油门")
-    print("  L3 按钮     - 前进/倒退切换")
+    print("  左边踏板    - 油门")
+    print("  左拨片      - 倒车")
+    print("  右拨片      - 前进")
     print("  三角按钮    - 紧急停止")
     print("  圆圈按钮    - 零点校准")
     print("  ESC/Q       - 退出")
@@ -291,7 +293,6 @@ def main():
     reverse = False
     prev_btn_triangle = False
     prev_btn_circle = False
-    prev_btn_l3 = False
 
     clock = pygame.time.Clock()
     target_fps = 30
@@ -302,7 +303,8 @@ def main():
 
             btn_triangle = buttons.get(BTN_TRIANGLE, False)
             btn_circle = buttons.get(BTN_CIRCLE, False)
-            btn_l3 = buttons.get(BTN_L3, False)
+            btn_l_paddle = buttons.get(BTN_L_PADDLE, False)
+            btn_r_paddle = buttons.get(BTN_R_PADDLE, False)
 
             if btn_triangle and not prev_btn_triangle:
                 emg_stop = not emg_stop
@@ -312,13 +314,13 @@ def main():
                 g29.steering_offset = -steering
                 print(f"[CTRL] 零点校准: offset={g29.steering_offset:.3f}")
 
-            if btn_l3 and not prev_btn_l3:
-                reverse = not reverse
-                print(f"[CTRL] 档位: {'R 倒车' if reverse else 'D 前进'}")
+            if btn_l_paddle:
+                reverse = True
+            elif btn_r_paddle:
+                reverse = False
 
             prev_btn_triangle = btn_triangle
             prev_btn_circle = btn_circle
-            prev_btn_l3 = btn_l3
 
             speed = throttle * max_speed
             angle_deg = steering * max_angle
