@@ -1,8 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description():
@@ -16,21 +15,22 @@ def generate_launch_description():
         DeclareLaunchArgument('http_port', default_value='8080'),
         DeclareLaunchArgument('serial_port', default_value='/dev/ttyACM0'),
 
-        # USB camera driver
+        # Horizon USB camera driver (installed in /opt/tros)
         Node(
-            package='usb_cam',
-            executable='usb_cam_node_exe',
-            name='usb_cam',
+            package='hobot_usb_cam',
+            executable='hobot_usb_cam',
+            name='hobot_usb_cam',
             parameters=[{
                 'video_device': LaunchConfiguration('camera_device'),
                 'image_width': LaunchConfiguration('image_width'),
                 'image_height': LaunchConfiguration('image_height'),
-                'pixel_format': 'yuyv',
+                'pixel_format': 'mjpeg',
                 'io_method': 'mmap',
-                'framerate': 30.0,
-                'camera_frame_id': 'camera_link',
+                'framerate': 30,
+                'frame_id': 'camera_link',
             }],
             remappings=[('image_raw', '/image_raw')],
+            arguments=['--ros-args', '--log-level', 'warn'],
         ),
 
         # Camera HTTP MJPEG streamer
