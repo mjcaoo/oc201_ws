@@ -291,6 +291,7 @@ def main():
     max_angle = cfg['max_steering_angle']
     emg_stop = False
     reverse = False
+    prev_reverse = False
     prev_btn_triangle = False
     prev_btn_circle = False
 
@@ -318,6 +319,11 @@ def main():
                 reverse = True
             elif btn_r_paddle:
                 reverse = False
+
+            if reverse != prev_reverse:
+                gear = 'R 倒车' if reverse else 'D 前进'
+                print(f"[CTRL] 档位: {gear}   (L={btn_l_paddle} R={btn_r_paddle})")
+            prev_reverse = reverse
 
             prev_btn_triangle = btn_triangle
             prev_btn_circle = btn_circle

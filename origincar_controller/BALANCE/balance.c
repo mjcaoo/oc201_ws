@@ -96,7 +96,7 @@ void Drive_Motor(float Vx,float Vy,float Vz)
 				MOTOR_A.Target = Vx * (R - 0.5f * Wheel_spacing) / R;
 				MOTOR_B.Target = Vx * (R + 0.5f * Wheel_spacing) / R;			
 			}
-			else 
+			else
 			{
 				MOTOR_A.Target = Vx;
 				MOTOR_B.Target = Vx;
