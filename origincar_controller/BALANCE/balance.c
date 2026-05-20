@@ -93,8 +93,8 @@ void Drive_Motor(float Vx,float Vy,float Vz)
 			//Inverse kinematics //运动学逆解
 			if(AngleR != 0)
 			{
-				MOTOR_A.Target = Vx * (R - 0.5f * Wheel_spacing) / R;
-				MOTOR_B.Target = Vx * (R + 0.5f * Wheel_spacing) / R;			
+				MOTOR_A.Target = Vx * (R + 0.5f * Wheel_spacing) / R;
+				MOTOR_B.Target = Vx * (R - 0.5f * Wheel_spacing) / R;
 			}
 			else
 			{

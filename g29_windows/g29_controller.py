@@ -5,7 +5,9 @@ G29 方向盘遥控器 — Windows 端
 """
 
 import argparse
+import ctypes
 import math
+import os
 import socket
 import struct
 import sys
@@ -16,6 +18,7 @@ import cv2
 import numpy as np
 import pygame
 import yaml
+from PIL import Image, ImageDraw, ImageFont
 
 FRAME_HEADER = 0x7B
 FRAME_TAIL = 0x7D
@@ -24,8 +27,8 @@ PACKET_SIZE = 12
 # 按钮索引约定 (G29 G Hub 模式)
 BTN_TRIANGLE = 3  # 紧急停止
 BTN_CIRCLE = 2    # 零点校准
-BTN_L_PADDLE = 4  # 左拨片 → 倒车
-BTN_R_PADDLE = 5  # 右拨片 → 前进
+BTN_L_PADDLE = 4  # 左拨片 → 减档
+BTN_R_PADDLE = 5  # 右拨片 → 加档
 
 
 class G29Input:
@@ -179,7 +182,7 @@ class HUD:
     """在画面上叠加控制信息"""
 
     @staticmethod
-    def draw(frame, steering, throttle, reverse, speed, angle_deg, connected, button_flags):
+    def draw(frame, steering, throttle, gear, speed, angle_deg, connected, button_flags):
         if frame is None:
             frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
@@ -190,8 +193,14 @@ class HUD:
         cv2.putText(frame, status_text, (10, 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
 
-        gear_text = "R" if reverse else "D"
-        gear_color = (0, 128, 255) if reverse else (0, 255, 0)
+        gear_labels = {-1: 'R', 0: 'N', 1: '1', 2: '2', 3: '3'}
+        gear_text = gear_labels.get(gear, '?')
+        if gear < 0:
+            gear_color = (0, 128, 255)
+        elif gear == 0:
+            gear_color = (200, 200, 200)
+        else:
+            gear_color = (0, 255, 0)
         cv2.putText(frame, f"Gear: {gear_text}", (10, 65),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, gear_color, 2)
         cv2.putText(frame, f"Speed: {speed:.2f} m/s", (10, 95),
@@ -212,7 +221,7 @@ class HUD:
         cv2.putText(frame, "THR", (10, h - 95), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 200, 0), 1)
         cv2.rectangle(frame, (10, h - 90), (30, h - 20), (50, 50, 50), -1)
         thr_h = int(throttle * 70)
-        thr_color = (0, 128, 255) if reverse else (0, 200, 0)
+        thr_color = (0, 128, 255) if gear < 0 else (0, 200, 0)
         cv2.rectangle(frame, (10, h - 20 - thr_h), (30, h - 20), thr_color, -1)
 
         if button_flags.get('emergency_stop', False):
@@ -273,8 +282,9 @@ def main():
     print("控制说明:")
     print("  方向盘      - 转向")
     print("  左边踏板    - 油门")
-    print("  左拨片      - 倒车")
-    print("  右拨片      - 前进")
+    print("  左拨片      - 减档")
+    print("  右拨片      - 加档")
+    print("  档位: R(-1) N(0) 1 2 3")
     print("  三角按钮    - 紧急停止")
     print("  圆圈按钮    - 零点校准")
     print("  ESC/Q       - 退出")
@@ -290,13 +300,20 @@ def main():
     max_speed = cfg['max_speed']
     max_angle = cfg['max_steering_angle']
     emg_stop = False
-    reverse = False
-    prev_reverse = False
+    gear = 0  # -1=倒车(R), 0=空档(N), 1/2/3=前进档
     prev_btn_triangle = False
     prev_btn_circle = False
+    prev_btn_l_paddle = False
+    prev_btn_r_paddle = False
 
     clock = pygame.time.Clock()
     target_fps = 30
+
+    cv2.namedWindow('G29 Controller', cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty('G29 Controller', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    user32 = ctypes.windll.user32
+    screen_w = user32.GetSystemMetrics(0)
+    screen_h = user32.GetSystemMetrics(1)
 
     try:
         while True:
@@ -315,38 +332,49 @@ def main():
                 g29.steering_offset = -steering
                 print(f"[CTRL] 零点校准: offset={g29.steering_offset:.3f}")
 
-            if btn_l_paddle:
-                reverse = True
-            elif btn_r_paddle:
-                reverse = False
+            # 拨片换挡（边沿触发）
+            gear_names = {-1: 'R 倒车', 0: 'N 空档', 1: '1档', 2: '2档', 3: '3档'}
+            if btn_l_paddle and not prev_btn_l_paddle:
+                gear = max(-1, gear - 1)
+                print(f"[CTRL] 档位: {gear_names[gear]}")
+            if btn_r_paddle and not prev_btn_r_paddle:
+                gear = min(3, gear + 1)
+                print(f"[CTRL] 档位: {gear_names[gear]}")
 
-            if reverse != prev_reverse:
-                gear = 'R 倒车' if reverse else 'D 前进'
-                print(f"[CTRL] 档位: {gear}   (L={btn_l_paddle} R={btn_r_paddle})")
-            prev_reverse = reverse
+            # 油门死区
+            if throttle < 0.03:
+                throttle = 0.0
+
+            # 根据档位计算有效油门
+            reverse = gear < 0
+            if gear == 0:
+                effective_throttle = 0.0
+            elif gear == -1:
+                effective_throttle = throttle / 3.0
+            else:
+                effective_throttle = throttle * gear / 3.0
+
+            speed = effective_throttle * max_speed
+            angle_deg = steering * max_angle
 
             prev_btn_triangle = btn_triangle
             prev_btn_circle = btn_circle
-
-            speed = throttle * max_speed
-            angle_deg = steering * max_angle
+            prev_btn_l_paddle = btn_l_paddle
+            prev_btn_r_paddle = btn_r_paddle
 
             button_flags = {
                 'emergency_stop': emg_stop,
                 'reverse': reverse,
             }
-            udp.send(steering, throttle, button_flags)
+            udp.send(steering, effective_throttle, button_flags)
 
             frame = cam.get_frame()
             display = HUD.draw(
-                frame, steering, throttle, reverse,
+                frame, steering, throttle, gear,
                 speed, angle_deg, cam.connected, button_flags
             )
 
-            display_h, display_w = display.shape[:2]
-            if display_w != cfg['display_width'] or display_h != cfg['display_height']:
-                display = cv2.resize(display,
-                                    (cfg['display_width'], cfg['display_height']))
+            display = cv2.resize(display, (screen_w, screen_h))
 
             cv2.imshow('G29 Controller', display)
             key = cv2.waitKey(1) & 0xFF
