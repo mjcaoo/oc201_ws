@@ -39,6 +39,10 @@ class G29BridgeNode(Node):
         self.buttons = 0
         self.last_recv_time = self.get_clock().now()
 
+        self.steering_smoothed = 0.0
+        self.declare_parameter('steering_smooth', 0.4)
+        self.steering_smooth = self.get_parameter('steering_smooth').value
+
         self.running = True
         self.udp_thread = threading.Thread(target=self._udp_receiver, daemon=True)
         self.udp_thread.start()
@@ -69,7 +73,7 @@ class G29BridgeNode(Node):
                 continue
 
             checksum = 0
-            for i in range(9):
+            for i in range(10):
                 checksum ^= data[i]
             if checksum != data[10]:
                 continue
@@ -100,6 +104,10 @@ class G29BridgeNode(Node):
         emergency_stop = bool(self.buttons & 0x01)
         reverse = bool(self.buttons & 0x04)
 
+        # EMA smoothing for steering to reduce jitter
+        alpha = self.steering_smooth
+        self.steering_smoothed = alpha * self.steering + (1.0 - alpha) * self.steering_smoothed
+
         if emergency_stop:
             speed = 0.0
             angle = 0.0
@@ -107,7 +115,7 @@ class G29BridgeNode(Node):
             speed = self.throttle * self.max_speed
             if reverse:
                 speed = -speed
-            angle = self.steering * math.radians(self.max_steering_angle)
+            angle = self.steering_smoothed * math.radians(self.max_steering_angle)
 
         msg = AckermannDriveStamped()
         msg.header.stamp = now.to_msg()

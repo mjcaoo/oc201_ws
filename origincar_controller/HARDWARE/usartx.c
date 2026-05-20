@@ -511,12 +511,23 @@ int USART1_IRQHandler(void)
 						Vz    =XYZ_Target_Speed_transition(rxbuf[7],rxbuf[8]);
 						if(Car_Mode==Akm_Car)
 						{
-							Move_Z=Vz_to_Akm_Angle(Move_X, Vz);
+							// 判断 Vy 原始 buffer 值，区分直接角度模式和角速度模式
+							u16 Vy_raw = (rxbuf[5] << 8) | rxbuf[6];
+
+							if (Vy_raw == 1)  // 直接角度模式：Vy = 1
+							{
+								// Vz 已经是角度值 (°)，左正右负，范围 -45 ~ +45
+								Move_Z = target_limit_float(Vz, -45.0f, 45.0f);
+							}
+							else  // 角速度模式：Vy = 0
+							{
+								Move_Z=Vz_to_Akm_Angle(Move_X, Vz);
+							}
 						}
 						else
 						{
 							Move_Z=XYZ_Target_Speed_transition(rxbuf[7],rxbuf[8]);
-						}		
+						}
 					}
 			  }
 		 }
